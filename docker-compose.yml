@@ -1,0 +1,24 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: rssdb
+      POSTGRES_USER: rss
+      POSTGRES_PASSWORD: rsspass
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    ports: ["5432:5432"]
+
+  ingestor:
+    build: ./ingestor
+    env_file: .env
+    depends_on:
+      - db
+    volumes:
+      - media:/data/media
+    command: ["python", "-m", "ingestor", "poll", "--feed-id", "1"]
+
+volumes:
+  dbdata:
+  media:
