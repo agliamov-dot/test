@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+ingestor/__init__.py
+ingestor/__main__.py
+ingestor/config.py
+ingestor/db.py
+ingestor/feeds.py
+ingestor/models.py
+ingestor/normalize.py
+ingestor/parser.py
+ingestor.egg-info/PKG-INFO
+ingestor.egg-info/SOURCES.txt
+ingestor.egg-info/dependency_links.txt
+ingestor.egg-info/requires.txt
+ingestor.egg-info/top_level.txt
+tests/test_normalize.py

@@ -10,6 +10,9 @@ dependencies = [
     "alembic",
 ]
 
+[tool.setuptools.packages.find]
+   include = ["ingestor"]
+
 [tool.black]
 line-length = 88
 
