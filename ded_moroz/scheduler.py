@@ -26,7 +26,7 @@ async def missed_job(bot: Bot) -> None:
 
 
 async def heartbeat_job() -> None:
-    await beat("scheduler")
+    await beat("scheduler", interval_seconds=600)
 
 
 async def main() -> None:

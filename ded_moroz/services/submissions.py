@@ -5,7 +5,15 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from ded_moroz.db.models import NotificationLog, NotificationType, PoemAttempt, Submission, User, UserStatus
+from ded_moroz.db.models import (
+    NotificationLog,
+    NotificationType,
+    PoemAttempt,
+    SafetyStatus,
+    Submission,
+    User,
+    UserStatus,
+)
 from ded_moroz.db.session import session_scope
 
 
@@ -34,6 +42,7 @@ async def record_attempt(
     scores: dict[str, Any] | None,
     reasons: dict[str, Any] | None,
     safety_flag: bool,
+    safety_status: SafetyStatus,
 ) -> PoemAttempt:
     async with session_scope() as session:
         attempt = PoemAttempt(
@@ -45,6 +54,7 @@ async def record_attempt(
             scores=scores,
             reasons=reasons,
             safety_flag=safety_flag,
+            safety_status=safety_status,
         )
         session.add(attempt)
         return attempt
@@ -59,6 +69,7 @@ async def save_submission(
     scores: dict[str, Any] | None,
     reasons: dict[str, Any] | None,
     safety_flag: bool,
+    safety_status: SafetyStatus,
 ) -> Submission:
     async with session_scope() as session:
         submission = Submission(
@@ -70,6 +81,7 @@ async def save_submission(
             scores=scores,
             reasons=reasons,
             safety_flag=safety_flag,
+            safety_status=safety_status,
         )
         session.add(submission)
         try:

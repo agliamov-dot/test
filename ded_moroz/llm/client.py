@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from ded_moroz.config import settings
+from ded_moroz.db.models import SafetyStatus
 
 DecisionLiteral = Literal["ACCEPT", "RETRY", "REJECT"]
 
@@ -17,6 +18,7 @@ class LlmResponse(BaseModel):
     scores: dict[str, Any] | None = None
     reasons: dict[str, Any] | None = None
     safety_flag: bool = False
+    safety_status: SafetyStatus = SafetyStatus.SAFE
 
 
 PROMPT_SYSTEM = (
@@ -42,6 +44,7 @@ class OpenRouterClient:
                     "scores": {"type": "object"},
                     "reasons": {"type": "object"},
                     "safety_flag": {"type": "boolean"},
+                    "safety_status": {"type": "string", "enum": [item.value for item in SafetyStatus]},
                 },
                 "required": ["decision", "ded_moroz_reply"],
                 "additionalProperties": False,
