@@ -4,7 +4,7 @@ import os
 from datetime import date
 from typing import List
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, AliasChoices, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
@@ -13,20 +13,42 @@ if os.path.exists(".env"):
 
 
 class CampaignConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="CAMPAIGN_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    start_date: date
-    total_days: int = 24
-    reminder_hour: int = 10
-    missed_hour: int = 22
-    timezone: str = "UTC"
-    max_attempts_per_day: int = Field(3, alias="MAX_ATTEMPTS_PER_DAY")
+    start_date: date = Field(..., validation_alias=AliasChoices("CAMPAIGN_START_DATE"))
+    days: int = Field(
+        24, validation_alias=AliasChoices("CAMPAIGN_DAYS", "CAMPAIGN_TOTAL_DAYS")
+    )
+    reminder_deadline_hour: int = Field(
+        10, validation_alias=AliasChoices("CAMPAIGN_REMINDER_DEADLINE_HOUR", "CAMPAIGN_REMINDER_HOUR")
+    )
+    missed_deadline_hour: int = Field(
+        22, validation_alias=AliasChoices("CAMPAIGN_MISSED_DEADLINE_HOUR", "CAMPAIGN_MISSED_HOUR")
+    )
+    timezone: str = Field("UTC", validation_alias=AliasChoices("CAMPAIGN_TZ", "CAMPAIGN_TIMEZONE"))
+    quiet_hours_start: int = Field(23, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_START"))
+    quiet_hours_end: int = Field(8, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_END"))
+    max_attempts_per_day: int = Field(
+        3, validation_alias=AliasChoices("CAMPAIGN_MAX_ATTEMPTS_PER_DAY", "MAX_ATTEMPTS_PER_DAY")
+    )
 
-    @field_validator("reminder_hour", "missed_hour")
+    @field_validator(
+        "reminder_deadline_hour",
+        "missed_deadline_hour",
+        "quiet_hours_start",
+        "quiet_hours_end",
+    )
     @classmethod
     def _validate_hour(cls, value: int) -> int:
         if not 0 <= value <= 23:
             raise ValueError("Hour must be between 0 and 23")
+        return value
+
+    @field_validator("days")
+    @classmethod
+    def _validate_days(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("Campaign days must be positive")
         return value
 
 

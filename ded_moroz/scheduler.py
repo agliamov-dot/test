@@ -34,14 +34,14 @@ async def main() -> None:
     scheduler = AsyncIOScheduler(timezone=settings.campaign.timezone)
     scheduler.add_job(
         reminder_job,
-        CronTrigger(hour=settings.campaign.reminder_hour, minute=0),
+        CronTrigger(hour=settings.campaign.reminder_deadline_hour, minute=0),
         args=[bot],
         id="daily_reminder",
         replace_existing=True,
     )
     scheduler.add_job(
         missed_job,
-        CronTrigger(hour=settings.campaign.missed_hour, minute=0),
+        CronTrigger(hour=settings.campaign.missed_deadline_hour, minute=0),
         args=[bot],
         id="missed_notification",
         replace_existing=True,

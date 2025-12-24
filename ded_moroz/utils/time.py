@@ -19,7 +19,7 @@ def current_campaign_day(current: datetime | None = None) -> int:
 
 def is_campaign_active(current: datetime | None = None) -> bool:
     day = current_campaign_day(current)
-    return 1 <= day <= settings.campaign.total_days
+    return 1 <= day <= settings.campaign.days
 
 
 def is_before_start(current: datetime | None = None) -> bool:
@@ -29,12 +29,25 @@ def is_before_start(current: datetime | None = None) -> bool:
 
 def reminder_window(current: datetime | None = None) -> bool:
     current_dt = current or now()
-    return current_dt.time().hour >= settings.campaign.reminder_hour
+    return current_dt.time().hour >= settings.campaign.reminder_deadline_hour
 
 
 def missed_window(current: datetime | None = None) -> bool:
     current_dt = current or now()
-    return current_dt.time().hour >= settings.campaign.missed_hour
+    return current_dt.time().hour >= settings.campaign.missed_deadline_hour
+
+
+def is_quiet_hours(current: datetime | None = None) -> bool:
+    current_dt = current or now()
+    start = settings.campaign.quiet_hours_start
+    end = settings.campaign.quiet_hours_end
+    hour = current_dt.time().hour
+
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
 
 
 def day_bounds(target_day: int) -> tuple[datetime, datetime]:
