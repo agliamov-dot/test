@@ -8,11 +8,11 @@ from ded_moroz.services import submissions as submissions_service
 from ded_moroz.services.heartbeat import beat
 from ded_moroz.services.logging import log_error
 from ded_moroz.services.users import list_active_users
-from ded_moroz.utils.time import current_campaign_day, is_campaign_active, missed_window, reminder_window
+from ded_moroz.utils.time import current_campaign_day, is_campaign_active, is_quiet_hours, missed_window, reminder_window
 
 
 async def send_daily_reminders(bot: Bot) -> None:
-    if not is_campaign_active() or not reminder_window():
+    if not is_campaign_active() or not reminder_window() or is_quiet_hours():
         return
     day = current_campaign_day()
     offset = 0
@@ -36,7 +36,7 @@ async def send_daily_reminders(bot: Bot) -> None:
 
 
 async def send_missed_notifications(bot: Bot) -> None:
-    if not is_campaign_active() or not missed_window():
+    if not is_campaign_active() or not missed_window() or is_quiet_hours():
         return
     day = current_campaign_day()
     previous_day = day - 1
