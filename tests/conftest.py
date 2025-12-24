@@ -33,7 +33,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 async def engine(event_loop) -> AsyncEngine:
     import ded_moroz.db.session as db_session
     from ded_moroz.db.models import Base
@@ -44,5 +44,9 @@ async def engine(event_loop) -> AsyncEngine:
     engine = db_session.get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    try:
+        yield engine
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
