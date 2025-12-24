@@ -4,6 +4,7 @@ import pytest
 
 from ded_moroz.services.submissions import SubmissionExistsError, save_submission
 from ded_moroz.services.users import get_or_create_user
+from ded_moroz.db.models import SafetyStatus
 
 
 @pytest.mark.asyncio
@@ -18,6 +19,7 @@ async def test_submission_unique(engine) -> None:  # noqa: ARG001
         scores=None,
         reasons=None,
         safety_flag=False,
+        safety_status=SafetyStatus.SAFE,
     )
     with pytest.raises(SubmissionExistsError):
         await save_submission(
@@ -29,4 +31,5 @@ async def test_submission_unique(engine) -> None:  # noqa: ARG001
             scores=None,
             reasons=None,
             safety_flag=False,
+            safety_status=SafetyStatus.SAFE,
         )

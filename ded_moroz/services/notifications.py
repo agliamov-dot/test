@@ -30,9 +30,14 @@ async def send_daily_reminders(bot: Bot) -> None:
             try:
                 await bot.send_message(user.telegram_id, f"День {day}! Не забудь прислать стих для подарка.")
             except Exception as exc:  # noqa: BLE001
-                await log_error(SeverityLevel.ERROR, "Failed to send reminder", {"user_id": user.id, "error": str(exc)})
+                await log_error(
+                    SeverityLevel.ERROR,
+                    "Failed to send reminder",
+                    {"user_id": user.id, "error": str(exc)},
+                    service_name="scheduler",
+                )
         offset += len(users)
-    await beat("scheduler")
+    await beat("scheduler", interval_seconds=24 * 60 * 60)
 
 
 async def send_missed_notifications(bot: Bot) -> None:
@@ -67,6 +72,7 @@ async def send_missed_notifications(bot: Bot) -> None:
                     SeverityLevel.ERROR,
                     "Failed to send missed notification",
                     {"user_id": user.id, "error": str(exc)},
+                    service_name="scheduler",
                 )
         offset += len(users)
-    await beat("scheduler")
+    await beat("scheduler", interval_seconds=24 * 60 * 60)

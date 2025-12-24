@@ -13,9 +13,11 @@ from ded_moroz.db.session import session_scope
 logger = logging.getLogger(__name__)
 
 
-async def log_error(level: SeverityLevel, message: str, context: dict[str, Any] | None = None) -> ErrorLog:
+async def log_error(
+    level: SeverityLevel, message: str, context: dict[str, Any] | None = None, service_name: str | None = None
+) -> ErrorLog:
     async with session_scope() as session:
-        record = ErrorLog(level=level, message=message, context=context)
+        record = ErrorLog(level=level, message=message, context=context, service_name=service_name)
         session.add(record)
         await session.flush()
 

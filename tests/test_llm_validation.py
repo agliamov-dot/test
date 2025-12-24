@@ -39,6 +39,7 @@ async def test_llm_valid_json(monkeypatch: pytest.MonkeyPatch, engine) -> None: 
         "scores": {"rhyme": 1},
         "reasons": {"tone": "ok"},
         "safety_flag": False,
+        "safety_status": "safe",
     }
     payload = {"choices": [{"message": {"content": json.dumps(content)}}]}
 

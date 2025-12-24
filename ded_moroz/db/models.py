@@ -22,6 +22,18 @@ class UserStatus(str, enum.Enum):
     STOPPED = "stopped"
 
 
+class SafetyStatus(str, enum.Enum):
+    SAFE = "safe"
+    NEEDS_REVIEW = "needs_review"
+    BLOCKED = "blocked"
+
+
+class GiftType(str, enum.Enum):
+    TEXT = "text"
+    URL = "url"
+    PAYLOAD = "payload"
+
+
 class NotificationType(str, enum.Enum):
     REMINDER = "reminder"
     MISSED = "missed"
@@ -48,6 +60,10 @@ class User(Base):
     opted_in_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     submissions: Mapped[list[Submission]] = relationship("Submission", back_populates="user")
 
@@ -59,6 +75,8 @@ class Gift(Base):
     day: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
     gift_text: Mapped[str | None] = mapped_column(String)
     gift_url: Mapped[str | None] = mapped_column(String)
+    gift_type: Mapped[GiftType] = mapped_column(Enum(GiftType, **_enum_values), default=GiftType.TEXT, nullable=False)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -75,6 +93,9 @@ class Submission(Base):
     scores: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     reasons: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     safety_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    safety_status: Mapped[SafetyStatus] = mapped_column(
+        Enum(SafetyStatus, **_enum_values), default=SafetyStatus.SAFE, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship("User", back_populates="submissions")
@@ -92,6 +113,9 @@ class PoemAttempt(Base):
     scores: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     reasons: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     safety_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    safety_status: Mapped[SafetyStatus] = mapped_column(
+        Enum(SafetyStatus, **_enum_values), default=SafetyStatus.SAFE, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship("User")
@@ -116,6 +140,7 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    service_name: Mapped[str | None] = mapped_column(String(255))
     level: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel, **_enum_values), nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False)
     context: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
@@ -129,6 +154,7 @@ class ServiceHeartbeat(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     service_name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_beat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    beat_interval_seconds: Mapped[int] = mapped_column(Integer, default=600, nullable=False)
 
 
 class AdminErrorQueue(Base):

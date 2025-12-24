@@ -4,8 +4,10 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
+import json
+
 from ded_moroz.config import settings
-from ded_moroz.db.models import SeverityLevel, UserStatus
+from ded_moroz.db.models import GiftType, SeverityLevel, UserStatus
 from ded_moroz.handlers.helpers import format_status, is_admin
 from ded_moroz.llm.client import LlmResponse, OpenRouterClient
 from ded_moroz.services import submissions as submissions_service
@@ -16,6 +18,20 @@ from ded_moroz.utils.time import current_campaign_day, is_before_start, is_campa
 
 router = Router()
 llm_client = OpenRouterClient()
+
+
+def _format_gift_line(gift: object) -> str:
+    if not gift:
+        return "Подарок пока не настроен."
+    if getattr(gift, "gift_type", None) == GiftType.PAYLOAD and getattr(gift, "payload", None) is not None:
+        return json.dumps(gift.payload, ensure_ascii=False)
+    if getattr(gift, "gift_type", None) == GiftType.URL and getattr(gift, "gift_url", None):
+        return gift.gift_url
+    if getattr(gift, "gift_text", None):
+        return gift.gift_text
+    if getattr(gift, "gift_url", None):
+        return gift.gift_url
+    return "Подарок пока не настроен."
 
 
 @router.message(Command("start"))
@@ -123,9 +139,34 @@ async def cmd_set_gift(message: Message, command: CommandObject) -> None:
         await message.answer("Нужно указать день и текст")
         return
     day = int(parts[0])
-    gift_text = parts[1]
-    gift_url = parts[2] if len(parts) == 3 else None
-    gift = await set_gift(day, gift_text, gift_url)
+    raw_type_or_text = parts[1]
+    gift_type = GiftType.TEXT
+    payload_data: dict | None = None
+    gift_text: str | None = None
+    gift_url: str | None = None
+
+    if raw_type_or_text in {t.value for t in GiftType}:
+        gift_type = GiftType(raw_type_or_text)
+        if len(parts) < 3:
+            await message.answer("Нужно указать содержимое подарка для выбранного типа.")
+            return
+        content = parts[2]
+    else:
+        content = raw_type_or_text
+        gift_url = parts[2] if len(parts) == 3 else None
+
+    if gift_type == GiftType.TEXT:
+        gift_text = content
+    elif gift_type == GiftType.URL:
+        gift_url = content
+    elif gift_type == GiftType.PAYLOAD:
+        try:
+            payload_data = json.loads(content)
+        except json.JSONDecodeError:
+            await message.answer("Payload должен быть валидным JSON.")
+            return
+
+    gift = await set_gift(day, gift_type, gift_text, gift_url, payload_data)
     await message.answer(f"Подарок на день {gift.day} обновлён.")
 
 
@@ -141,7 +182,10 @@ async def cmd_get_gift(message: Message, command: CommandObject) -> None:
     if not gift:
         await message.answer("Подарок не найден")
         return
-    await message.answer(f"День {gift.day}: {gift.gift_text or ''} {gift.gift_url or ''}")
+    payload_line = f" payload={gift.payload}" if gift.payload else ""
+    await message.answer(
+        f"День {gift.day}: тип={gift.gift_type.value} текст={gift.gift_text or ''} url={gift.gift_url or ''}{payload_line}"
+    )
 
 
 @router.message(Command("admin_errors"))
@@ -197,7 +241,7 @@ async def cmd_admin_health(message: Message) -> None:
     if not heartbeats:
         await message.answer("Пульс не найден")
         return
-    lines = [f"{hb.service_name}: {hb.last_beat_at}" for hb in heartbeats]
+    lines = [f"{hb.service_name}: {hb.last_beat_at} (freq: {hb.beat_interval_seconds}s)" for hb in heartbeats]
     await message.answer("\n".join(lines))
 
 
@@ -223,7 +267,7 @@ async def process_poem(message: Message) -> None:
     day = current_campaign_day()
     if await submissions_service.has_submission(user.id, day):
         gift = await get_gift_for_day(day)
-        gift_line = gift.gift_text or gift.gift_url or "Подарок уже был выдан."
+        gift_line = _format_gift_line(gift)
         await message.answer(f"На сегодня всё! {gift_line}")
         return
 
@@ -244,6 +288,7 @@ async def process_poem(message: Message) -> None:
             llm_result.scores,
             llm_result.reasons,
             llm_result.safety_flag,
+            llm_result.safety_status,
         )
         if llm_result.decision == "ACCEPT":
             try:
@@ -256,16 +301,17 @@ async def process_poem(message: Message) -> None:
                     llm_result.scores,
                     llm_result.reasons,
                     llm_result.safety_flag,
+                    llm_result.safety_status,
                 )
             except submissions_service.SubmissionExistsError:
                 pass
             gift = await get_gift_for_day(day)
-            gift_line = gift.gift_text or gift.gift_url or "Подарок пока не настроен."
+            gift_line = _format_gift_line(gift)
             await message.answer(f"{llm_result.ded_moroz_reply}\nТвой подарок: {gift_line}")
         else:
             attempts_left = settings.campaign.max_attempts_per_day - attempts - 1
             suffix = f" Осталось попыток: {attempts_left}." if attempts_left > 0 else ""
             await message.answer(f"{llm_result.ded_moroz_reply}{suffix}")
     except Exception as exc:  # noqa: BLE001
-        await log_error(SeverityLevel.ERROR, "Processing poem failed", {"error": str(exc)})
+        await log_error(SeverityLevel.ERROR, "Processing poem failed", {"error": str(exc)}, service_name="bot")
         await message.answer("Моё волшебство дало сбой. Попробуй позже.")

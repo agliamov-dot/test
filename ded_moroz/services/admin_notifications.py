@@ -16,7 +16,8 @@ async def dispatch_admin_errors(bot: Bot) -> int:
     sent = 0
     for item in pending:
         error = item.error
-        message = f"[ERROR] {error.level}: {error.message}\nContext: {error.context}"
+        service_info = f"[{error.service_name}]" if error.service_name else ""
+        message = f"[ERROR]{service_info} {error.level}: {error.message}\nContext: {error.context}"
         for admin_id in admins:
             await bot.send_message(admin_id, message)
             sent += 1
