@@ -34,7 +34,7 @@ def event_loop():
 
 
 @pytest.fixture(scope="session")
-async def engine() -> AsyncEngine:
+async def engine(event_loop) -> AsyncEngine:
     import ded_moroz.db.session as db_session
     from ded_moroz.db.models import Base
 
