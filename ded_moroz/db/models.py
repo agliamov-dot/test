@@ -13,6 +13,9 @@ class Base(DeclarativeBase):
     pass
 
 
+_enum_values = {"values_callable": lambda enum_cls: [item.value for item in enum_cls]}
+
+
 class UserStatus(str, enum.Enum):
     ACTIVE = "active"
     PAUSED = "paused"
@@ -39,7 +42,9 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(255))
     first_name: Mapped[str | None] = mapped_column(String(255))
     last_name: Mapped[str | None] = mapped_column(String(255))
-    status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), default=UserStatus.ACTIVE, nullable=False)
+    status: Mapped[UserStatus] = mapped_column(
+        Enum(UserStatus, **_enum_values), default=UserStatus.ACTIVE, nullable=False
+    )
     opted_in_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -99,7 +104,9 @@ class NotificationLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     day: Mapped[int] = mapped_column(Integer, nullable=False)
-    notification_type: Mapped[NotificationType] = mapped_column(Enum(NotificationType), nullable=False)
+    notification_type: Mapped[NotificationType] = mapped_column(
+        Enum(NotificationType, **_enum_values), nullable=False
+    )
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship("User")
@@ -109,7 +116,7 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    level: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel), nullable=False)
+    level: Mapped[SeverityLevel] = mapped_column(Enum(SeverityLevel, **_enum_values), nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False)
     context: Mapped[dict[str, Any] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
