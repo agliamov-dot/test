@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from ded_moroz.llm.client import LlmResponse, OpenRouterClient
+from ded_moroz.llm.client import LlmClientError, LlmResponse, OpenRouterClient
 
 
 class DummyResponse:
@@ -57,5 +57,5 @@ async def test_llm_invalid_json(monkeypatch: pytest.MonkeyPatch, engine) -> None
     client = OpenRouterClient()
     monkeypatch.setattr("httpx.AsyncClient", lambda: DummyClient(payload))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(LlmClientError):
         await client.evaluate_poem("Стих", day=1, user_id=1)

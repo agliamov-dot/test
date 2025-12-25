@@ -5,11 +5,12 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import json
+from typing import Final
 
 from ded_moroz.config import settings
 from ded_moroz.db.models import GiftType, SeverityLevel, UserStatus
 from ded_moroz.handlers.helpers import format_status, is_admin
-from ded_moroz.llm.client import LlmResponse, OpenRouterClient
+from ded_moroz.llm.client import LlmClientError, LlmResponse, OpenRouterClient
 from ded_moroz.services import submissions as submissions_service
 from ded_moroz.services.gifts import get_gift_for_day, set_gift
 from ded_moroz.services.logging import log_error
@@ -22,6 +23,9 @@ from ded_moroz.utils.time import (
     is_quiet_hours,
     quiet_hours_end,
 )
+
+POEM_MIN_LENGTH: Final[int] = 10
+POEM_MAX_LENGTH: Final[int] = 1500
 
 router = Router()
 llm_client = OpenRouterClient()
@@ -449,6 +453,25 @@ async def process_poem(message: Message) -> None:
         return
 
     poem_text = message.text
+    if not isinstance(poem_text, str):
+        await message.answer("Я жду текстовое сообщение со стихом. Голосовые и вложения не подойдут.")
+        return
+    poem_text = poem_text.strip()
+    if len(poem_text) < POEM_MIN_LENGTH:
+        attempts_left = settings.campaign.max_attempts_per_day - attempts
+        suffix = f" Попыток осталось: {attempts_left}." if attempts_left else ""
+        await message.answer(
+            f"Стих слишком короткий — добавь деталей и эмоций (минимум {POEM_MIN_LENGTH} символов).{suffix}"
+        )
+        return
+    if len(poem_text) > POEM_MAX_LENGTH:
+        attempts_left = settings.campaign.max_attempts_per_day - attempts
+        suffix = f" Попыток осталось: {attempts_left}." if attempts_left else ""
+        await message.answer(
+            f"Стих слишком длинный — уложись в {POEM_MAX_LENGTH} символов и пришли снова.{suffix}"
+        )
+        return
+
     try:
         llm_result: LlmResponse = await llm_client.evaluate_poem(poem_text, day, user.id)
         await submissions_service.record_attempt(
@@ -484,6 +507,14 @@ async def process_poem(message: Message) -> None:
             attempts_left = settings.campaign.max_attempts_per_day - attempts - 1
             suffix = f" Осталось попыток: {attempts_left}." if attempts_left > 0 else ""
             await message.answer(f"{llm_result.ded_moroz_reply}{suffix}")
+    except LlmClientError as exc:
+        await log_error(
+            SeverityLevel.ERROR,
+            "LLM evaluation failed",
+            {"error": str(exc), "user_id": user.id, "day": day},
+            service_name="bot",
+        )
+        await message.answer("Моё волшебство сегодня не отвечает. Попробуй позже — попытка не сгорела.")
     except Exception as exc:  # noqa: BLE001
         await log_error(SeverityLevel.ERROR, "Processing poem failed", {"error": str(exc)}, service_name="bot")
         await message.answer("Моё волшебство дало сбой. Попробуй позже.")
