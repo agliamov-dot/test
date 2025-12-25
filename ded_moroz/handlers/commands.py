@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import json
 
@@ -14,7 +14,14 @@ from ded_moroz.services import submissions as submissions_service
 from ded_moroz.services.gifts import get_gift_for_day, set_gift
 from ded_moroz.services.logging import log_error
 from ded_moroz.services.users import get_or_create_user, get_user_by_telegram, update_status
-from ded_moroz.utils.time import current_campaign_day, is_before_start, is_campaign_active
+from ded_moroz.utils.time import (
+    current_day_deadline,
+    is_after_deadline,
+    is_before_start,
+    is_campaign_active,
+    is_quiet_hours,
+    quiet_hours_end,
+)
 
 router = Router()
 llm_client = OpenRouterClient()
@@ -34,6 +41,40 @@ def _format_gift_line(gift: object) -> str:
     return "Подарок пока не настроен."
 
 
+def _main_keyboard(user_status: UserStatus) -> InlineKeyboardMarkup:
+    inline_keyboard = [
+        [InlineKeyboardButton(text="Сдать стих за сегодня", callback_data="gift:submit")],
+        [InlineKeyboardButton(text="Статус", callback_data="status:show")],
+    ]
+    if user_status == UserStatus.PAUSED:
+        inline_keyboard.append([InlineKeyboardButton(text="Продолжить", callback_data="user:resume")])
+    else:
+        inline_keyboard.append([InlineKeyboardButton(text="Пауза", callback_data="user:pause")])
+    inline_keyboard.append([InlineKeyboardButton(text="Остановить", callback_data="user:stop_confirm")])
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+
+def _stop_confirmation_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Да, остановить", callback_data="user:stop"),
+                InlineKeyboardButton(text="Отмена", callback_data="user:stop_cancel"),
+            ]
+        ]
+    )
+
+
+async def _respond(target: Message | CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
+    if isinstance(target, CallbackQuery):
+        await target.answer()
+        message = target.message
+    else:
+        message = target
+    if message:
+        await message.answer(text, reply_markup=reply_markup)
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     user = await get_or_create_user(
@@ -42,9 +83,14 @@ async def cmd_start(message: Message) -> None:
         first_name=message.from_user.first_name,
         last_name=message.from_user.last_name,
     )
+    if user.status == UserStatus.STOPPED:
+        await update_status(user.id, UserStatus.ACTIVE)
+        user.status = UserStatus.ACTIVE
+    keyboard = _main_keyboard(user.status)
     await message.answer(
         "Хо-хо-хо! Ты в игре. Каждый день жду твой стих, чтобы открыть подарок. "
-        "Пиши текстом, а я проверю через волшебство ИИ."
+        "Пиши текстом, а я проверю через волшебство ИИ.",
+        reply_markup=keyboard,
     )
 
 
@@ -55,7 +101,7 @@ async def cmd_pause(message: Message) -> None:
         await message.answer("Сначала нажми /start, чтобы присоединиться.")
         return
     await update_status(user.id, UserStatus.PAUSED)
-    await message.answer("Понял, делаю паузу. Возвращайся, когда будешь готов.")
+    await message.answer("Понял, делаю паузу. Возвращайся, когда будешь готов.", reply_markup=_main_keyboard(UserStatus.PAUSED))
 
 
 @router.message(Command("resume"))
@@ -65,7 +111,7 @@ async def cmd_resume(message: Message) -> None:
         await message.answer("Сначала нажми /start, чтобы присоединиться.")
         return
     await update_status(user.id, UserStatus.ACTIVE)
-    await message.answer("Продолжаем! Снова жду твои стихи.")
+    await message.answer("Продолжаем! Снова жду твои стихи.", reply_markup=_main_keyboard(UserStatus.ACTIVE))
 
 
 @router.message(Command("stop"))
@@ -74,8 +120,7 @@ async def cmd_stop(message: Message) -> None:
     if not user:
         await message.answer("Ты ещё не в игре. Нажми /start.")
         return
-    await update_status(user.id, UserStatus.STOPPED)
-    await message.answer("Жаль расставаться. Если передумаешь — /start." )
+    await message.answer("Точно остановить участие? Ты перестанешь получать уведомления.", reply_markup=_stop_confirmation_keyboard())
 
 
 @router.message(Command("status"))
@@ -84,7 +129,7 @@ async def cmd_status(message: Message) -> None:
     if not user:
         await message.answer("Я тебя ещё не видел. /start, чтобы начать.")
         return
-    await message.answer(format_status(user))
+    await message.answer(format_status(user), reply_markup=_main_keyboard(user.status))
 
 
 @router.message(Command("admin_stats"))
@@ -245,6 +290,125 @@ async def cmd_admin_health(message: Message) -> None:
     await message.answer("\n".join(lines))
 
 
+@router.callback_query(F.data == "status:show")
+async def cq_status(callback: CallbackQuery) -> None:
+    user = await get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await _respond(callback, "Я тебя ещё не видел. Нажми /start, чтобы начать.")
+        return
+    await _respond(callback, format_status(user), reply_markup=_main_keyboard(user.status))
+
+
+@router.message(Command("gift"))
+async def cmd_gift(message: Message) -> None:
+    await _handle_gift_request(message)
+
+
+@router.callback_query(F.data == "gift:submit")
+async def cq_gift(callback: CallbackQuery) -> None:
+    await _handle_gift_request(callback)
+
+
+async def _handle_gift_request(target: Message | CallbackQuery) -> None:
+    user = await get_user_by_telegram(target.from_user.id)
+    if not user:
+        await _respond(target, "Сначала нажми /start, чтобы присоединиться.")
+        return
+    if user.status == UserStatus.STOPPED:
+        await _respond(target, "Ты остановил участие. Вернись командой /start.")
+        return
+    if user.status == UserStatus.PAUSED:
+        await _respond(target, "Ты на паузе. /resume — и снова в бой.", reply_markup=_main_keyboard(user.status))
+        return
+    if is_before_start():
+        await _respond(target, "Кампания ещё не началась. Потерпи чуть-чуть!")
+        return
+    if not is_campaign_active():
+        await _respond(target, "Кампания уже завершилась. Спасибо за участие!")
+        return
+    if is_quiet_hours():
+        quiet_end = quiet_hours_end()
+        await _respond(
+            target,
+            f"Сейчас тихие часы. Жду твой стих после {quiet_end.strftime('%d.%m %H:%M %Z')}.",
+        )
+        return
+
+    day, deadline_dt = current_day_deadline()
+    if is_after_deadline():
+        await _respond(
+            target,
+            f"Дедлайн на сегодня ({deadline_dt.strftime('%H:%M %Z')}) уже прошёл. Жду тебя завтра!",
+        )
+        return
+
+    if await submissions_service.has_submission(user.id, day):
+        gift = await get_gift_for_day(day)
+        gift_line = _format_gift_line(gift)
+        await _respond(target, f"На сегодня всё! {gift_line}")
+        return
+
+    attempts = await submissions_service.count_attempts(user.id, day)
+    if attempts >= settings.campaign.max_attempts_per_day:
+        await _respond(target, "Лимит попыток на сегодня исчерпан. Приходи завтра.")
+        return
+    attempts_left = settings.campaign.max_attempts_per_day - attempts
+    attempts_hint = (
+        f" Осталось попыток: {attempts_left}." if attempts_left < settings.campaign.max_attempts_per_day else ""
+    )
+    await _respond(
+        target,
+        f"День {day}. Присылай стих текстом, чтобы открыть подарок. Дедлайн сегодня: {deadline_dt.strftime('%H:%M %Z')}."
+        f"{attempts_hint}",
+    )
+
+
+@router.callback_query(F.data == "user:pause")
+async def cq_pause(callback: CallbackQuery) -> None:
+    user = await get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await _respond(callback, "Сначала нажми /start, чтобы присоединиться.")
+        return
+    await update_status(user.id, UserStatus.PAUSED)
+    await _respond(callback, "Понял, делаю паузу. Возвращайся, когда будешь готов.", reply_markup=_main_keyboard(UserStatus.PAUSED))
+
+
+@router.callback_query(F.data == "user:resume")
+async def cq_resume(callback: CallbackQuery) -> None:
+    user = await get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await _respond(callback, "Сначала нажми /start, чтобы присоединиться.")
+        return
+    await update_status(user.id, UserStatus.ACTIVE)
+    await _respond(callback, "Продолжаем! Снова жду твои стихи.", reply_markup=_main_keyboard(UserStatus.ACTIVE))
+
+
+@router.callback_query(F.data == "user:stop_confirm")
+async def cq_stop_confirm(callback: CallbackQuery) -> None:
+    user = await get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await _respond(callback, "Ты ещё не в игре. Нажми /start.")
+        return
+    await _respond(callback, "Точно остановить участие? Ты перестанешь получать уведомления.", reply_markup=_stop_confirmation_keyboard())
+
+
+@router.callback_query(F.data == "user:stop")
+async def cq_stop(callback: CallbackQuery) -> None:
+    user = await get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await _respond(callback, "Ты ещё не в игре. Нажми /start.")
+        return
+    await update_status(user.id, UserStatus.STOPPED)
+    await _respond(callback, "Жаль расставаться. Если передумаешь — /start.")
+
+
+@router.callback_query(F.data == "user:stop_cancel")
+async def cq_stop_cancel(callback: CallbackQuery) -> None:
+    user = await get_user_by_telegram(callback.from_user.id)
+    status = user.status if user else UserStatus.ACTIVE
+    await _respond(callback, "Отмена. Я с тобой!", reply_markup=_main_keyboard(status))
+
+
 @router.message(F.text)
 async def process_poem(message: Message) -> None:
     user = await get_user_by_telegram(message.from_user.id)
@@ -263,8 +427,16 @@ async def process_poem(message: Message) -> None:
     if not is_campaign_active():
         await message.answer("Кампания уже завершилась. Спасибо за участие!")
         return
+    if is_quiet_hours():
+        quiet_end = quiet_hours_end()
+        await message.answer(f"Сейчас тихие часы. Жду стих после {quiet_end.strftime('%d.%m %H:%M %Z')}.")
+        return
 
-    day = current_campaign_day()
+    day, deadline_dt = current_day_deadline()
+    if is_after_deadline():
+        await message.answer(f"Дедлайн на сегодня ({deadline_dt.strftime('%H:%M %Z')}) уже прошёл. Жду тебя завтра!")
+        return
+
     if await submissions_service.has_submission(user.id, day):
         gift = await get_gift_for_day(day)
         gift_line = _format_gift_line(gift)
