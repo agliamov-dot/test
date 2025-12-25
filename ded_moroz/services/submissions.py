@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +25,16 @@ async def has_submission(user_id: int, day: int) -> bool:
     async with session_scope() as session:
         result = await session.execute(select(Submission.id).where(Submission.user_id == user_id, Submission.day == day))
         return result.scalar_one_or_none() is not None
+
+
+async def get_submissions_for_users(user_ids: Sequence[int], day: int) -> set[int]:
+    if not user_ids:
+        return set()
+    async with session_scope() as session:
+        result = await session.execute(
+            select(Submission.user_id).where(Submission.user_id.in_(user_ids), Submission.day == day)
+        )
+        return set(result.scalars())
 
 
 async def count_attempts(user_id: int, day: int) -> int:
@@ -101,3 +111,25 @@ async def create_notification_log(user_id: int, day: int, notification_type: Not
             await session.rollback()
             return False
         return True
+
+
+async def create_notification_logs_batch(user_ids: Sequence[int], day: int, notification_type: NotificationType) -> set[int]:
+    if not user_ids:
+        return set()
+
+    async with session_scope() as session:
+        existing_result = await session.execute(
+            select(NotificationLog.user_id)
+            .where(NotificationLog.user_id.in_(user_ids))
+            .where(NotificationLog.day == day)
+            .where(NotificationLog.notification_type == notification_type)
+        )
+        existing_ids = set(existing_result.scalars())
+        pending_ids = [user_id for user_id in user_ids if user_id not in existing_ids]
+        if not pending_ids:
+            return set()
+
+        session.add_all(
+            [NotificationLog(user_id=user_id, day=day, notification_type=notification_type) for user_id in pending_ids]
+        )
+        return set(pending_ids)
