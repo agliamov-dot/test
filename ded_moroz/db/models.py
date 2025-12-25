@@ -4,7 +4,20 @@ import enum
 from datetime import datetime, date
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+    BigInteger,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -50,7 +63,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_id: Mapped[int] = mapped_column(Integer, unique=True, index=True, nullable=False)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[str | None] = mapped_column(String(255))
     first_name: Mapped[str | None] = mapped_column(String(255))
     last_name: Mapped[str | None] = mapped_column(String(255))
