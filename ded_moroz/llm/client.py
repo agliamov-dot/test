@@ -39,12 +39,10 @@ LLM_JSON_SCHEMA = {
         "properties": {
             "decision": {"type": "string", "enum": ["ACCEPT", "RETRY", "REJECT"]},
             "ded_moroz_reply": {"type": "string"},
-            "scores": {"type": "object"},
-            "reasons": {"type": "object"},
             "safety_flag": {"type": "boolean"},
             "safety_status": {"type": "string", "enum": [item.value for item in SafetyStatus]},
         },
-        "required": ["decision", "ded_moroz_reply"],
+        "required": ["decision", "ded_moroz_reply", "safety_flag", "safety_status"],
         "additionalProperties": False,
     },
 }
