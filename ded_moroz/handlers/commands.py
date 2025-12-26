@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import logging
 from datetime import date
 from typing import Final
 
@@ -33,6 +34,7 @@ POEM_MAX_LENGTH: Final[int] = 1500
 
 router = Router()
 llm_client = OpenRouterClient()
+logger = logging.getLogger(__name__)
 
 
 def _format_gift_line(gift: object) -> str:
@@ -84,8 +86,17 @@ async def _respond(target: Message | CallbackQuery, text: str, reply_markup: Inl
 
 
 async def _ensure_admin(message: Message) -> bool:
-    if is_admin(message.from_user.id):
+    telegram_id = message.from_user.id
+    if is_admin(telegram_id):
+        logger.info("Admin access granted", extra={"telegram_id": telegram_id, "command": message.text})
         return True
+    await log_error(
+        SeverityLevel.WARNING,
+        "Admin access denied",
+        {"telegram_id": telegram_id, "command": message.text},
+        service_name="bot",
+    )
+    logger.warning("Admin access denied", extra={"telegram_id": telegram_id, "command": message.text})
     await message.answer("У тебя нет прав администратора.")
     return False
 
