@@ -12,6 +12,12 @@ async def get_gift_for_day(day: int) -> Gift | None:
         return result.scalar_one_or_none()
 
 
+async def list_gifts() -> list[Gift]:
+    async with session_scope() as session:
+        result = await session.execute(select(Gift).order_by(Gift.day))
+        return list(result.scalars())
+
+
 async def set_gift(
     day: int,
     gift_type: GiftType = GiftType.TEXT,

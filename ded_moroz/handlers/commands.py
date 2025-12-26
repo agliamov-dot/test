@@ -1,26 +1,30 @@
 from __future__ import annotations
 
+import json
+import os
+from datetime import date
+from typing import Final
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-
-import json
-from typing import Final
 
 from ded_moroz.config import settings
 from ded_moroz.db.models import GiftType, SeverityLevel, UserStatus
 from ded_moroz.handlers.helpers import format_status, is_admin
 from ded_moroz.llm.client import LlmClientError, LlmResponse, OpenRouterClient
 from ded_moroz.services import submissions as submissions_service
-from ded_moroz.services.gifts import get_gift_for_day, set_gift
-from ded_moroz.services.logging import log_error
+from ded_moroz.services.gifts import get_gift_for_day, list_gifts, set_gift
+from ded_moroz.services.logging import fetch_recent_errors, log_error
 from ded_moroz.services.users import get_or_create_user, get_user_by_telegram, update_status
 from ded_moroz.utils.time import (
+    current_campaign_day,
     current_day_deadline,
     is_after_deadline,
     is_before_start,
     is_campaign_active,
     is_quiet_hours,
+    now,
     quiet_hours_end,
 )
 
@@ -77,6 +81,21 @@ async def _respond(target: Message | CallbackQuery, text: str, reply_markup: Inl
         message = target
     if message:
         await message.answer(text, reply_markup=reply_markup)
+
+
+async def _ensure_admin(message: Message) -> bool:
+    if is_admin(message.from_user.id):
+        return True
+    await message.answer("У тебя нет прав администратора.")
+    return False
+
+
+def _format_error_entry(error: object) -> str:
+    created_at = getattr(error, "created_at", None)
+    created_part = f" [{created_at.strftime('%d.%m %H:%M')}]" if created_at else ""
+    context = getattr(error, "context", None)
+    context_part = f" — контекст: {context}" if context else ""
+    return f"#{getattr(error, 'id', '?')} [{getattr(error, 'level', '?')}] {getattr(error, 'message', '')}{created_part}{context_part}"
 
 
 @router.message(Command("start"))
@@ -138,7 +157,7 @@ async def cmd_status(message: Message) -> None:
 
 @router.message(Command("admin_stats"))
 async def cmd_admin_stats(message: Message) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     from sqlalchemy import func, select
 
@@ -159,7 +178,7 @@ async def cmd_admin_stats(message: Message) -> None:
 
 @router.message(Command("admin_user"))
 async def cmd_admin_user(message: Message, command: CommandObject) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     if not command.args:
         await message.answer("Используй: /admin_user <telegram_id>")
@@ -178,7 +197,7 @@ async def cmd_admin_user(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("set_gift"))
 async def cmd_set_gift(message: Message, command: CommandObject) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     if not command.args:
         await message.answer("Используй: /set_gift <day> <текст> [url]")
@@ -216,12 +235,18 @@ async def cmd_set_gift(message: Message, command: CommandObject) -> None:
             return
 
     gift = await set_gift(day, gift_type, gift_text, gift_url, payload_data)
+    await log_error(
+        SeverityLevel.INFO,
+        "Gift updated",
+        {"day": day, "gift_type": gift_type.value, "admin_id": message.from_user.id},
+        service_name="gifts",
+    )
     await message.answer(f"Подарок на день {gift.day} обновлён.")
 
 
 @router.message(Command("get_gift"))
 async def cmd_get_gift(message: Message, command: CommandObject) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     if not command.args:
         await message.answer("Используй: /get_gift <day>")
@@ -229,6 +254,12 @@ async def cmd_get_gift(message: Message, command: CommandObject) -> None:
     day = int(command.args.strip())
     gift = await get_gift_for_day(day)
     if not gift:
+        await log_error(
+            SeverityLevel.WARNING,
+            "Gift not found",
+            {"day": day, "admin_id": message.from_user.id},
+            service_name="gifts",
+        )
         await message.answer("Подарок не найден")
         return
     payload_line = f" payload={gift.payload}" if gift.payload else ""
@@ -237,9 +268,37 @@ async def cmd_get_gift(message: Message, command: CommandObject) -> None:
     )
 
 
+@router.message(Command("admin_gifts"))
+async def cmd_admin_gifts(message: Message) -> None:
+    if not await _ensure_admin(message):
+        return
+    gifts = await list_gifts()
+    gifts_by_day = {gift.day: gift for gift in gifts}
+    missing_days: list[int] = []
+    lines = []
+    for day in range(1, settings.campaign.days + 1):
+        gift = gifts_by_day.get(day)
+        if gift:
+            lines.append(f"День {day}: {_format_gift_line(gift)}")
+        else:
+            lines.append(f"День {day}: подарок не настроен")
+            missing_days.append(day)
+    response_parts = ["Статус подарков:", "\n".join(lines)]
+    if missing_days:
+        errors = await fetch_recent_errors(limit=10, service_name="gifts", message_query="Gift")
+        if not errors:
+            errors = await fetch_recent_errors(limit=10, message_query="gift")
+        if errors:
+            response_parts.append("Последние записи журнала по подаркам:")
+            response_parts.extend([_format_error_entry(error) for error in errors])
+        else:
+            response_parts.append("Логов по подаркам пока нет — добавь подарки и повтори команду.")
+    await message.answer("\n".join(response_parts))
+
+
 @router.message(Command("admin_errors"))
 async def cmd_admin_errors(message: Message) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     from sqlalchemy import select
 
@@ -258,7 +317,7 @@ async def cmd_admin_errors(message: Message) -> None:
 
 @router.message(Command("admin_error"))
 async def cmd_admin_error(message: Message, command: CommandObject) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     if not command.args:
         await message.answer("Используй: /admin_error <id>")
@@ -277,7 +336,7 @@ async def cmd_admin_error(message: Message, command: CommandObject) -> None:
 
 @router.message(Command("admin_health"))
 async def cmd_admin_health(message: Message) -> None:
-    if not is_admin(message.from_user.id):
+    if not await _ensure_admin(message):
         return
     from sqlalchemy import select
 
@@ -292,6 +351,56 @@ async def cmd_admin_health(message: Message) -> None:
         return
     lines = [f"{hb.service_name}: {hb.last_beat_at} (freq: {hb.beat_interval_seconds}s)" for hb in heartbeats]
     await message.answer("\n".join(lines))
+
+
+@router.message(Command("campaign_start"))  # noqa: D401
+async def cmd_campaign_start(message: Message, command: CommandObject) -> None:
+    if not await _ensure_admin(message):
+        return
+    if not command.args:
+        current_day = current_campaign_day()
+        await message.answer(
+            f"Текущая дата старта кампании: {settings.campaign.start_date.isoformat()} "
+            f"(сейчас день {current_day} из {settings.campaign.days}).\n"
+            "Чтобы поменять дату, используй: /campaign_start YYYY-MM-DD"
+        )
+        return
+    try:
+        new_start = date.fromisoformat(command.args.strip())
+    except ValueError:
+        await message.answer("Формат даты: YYYY-MM-DD")
+        return
+    settings.campaign.start_date = new_start
+    os.environ["CAMPAIGN_START_DATE"] = new_start.isoformat()
+    await log_error(
+        SeverityLevel.INFO,
+        "Campaign start date updated",
+        {"start_date": new_start.isoformat(), "admin_id": message.from_user.id},
+        service_name="campaign",
+    )
+    await message.answer(
+        f"Старт кампании обновлён на {new_start.isoformat()}. "
+        f"Текущий день: {current_campaign_day()} из {settings.campaign.days}."
+    )
+
+
+@router.message(Command("campaign_reset_dates"))
+async def cmd_campaign_reset_dates(message: Message) -> None:
+    if not await _ensure_admin(message):
+        return
+    today = now().date()
+    settings.campaign.start_date = today
+    os.environ["CAMPAIGN_START_DATE"] = today.isoformat()
+    await log_error(
+        SeverityLevel.INFO,
+        "Campaign dates reset for testing",
+        {"start_date": today.isoformat(), "admin_id": message.from_user.id},
+        service_name="campaign",
+    )
+    await message.answer(
+        "Даты кампании сброшены для тестирования. "
+        f"Старт теперь {today.isoformat()}, расчёт дня начинается заново."
+    )
 
 
 @router.callback_query(F.data == "status:show")
