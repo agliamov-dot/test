@@ -81,9 +81,11 @@ class AdminConfig(BaseSettings):
 
     @field_validator("admin_ids", mode="before")
     @classmethod
-    def _split_ids(cls, value: str | list[int]) -> list[int]:
+    def _split_ids(cls, value: str | list[int] | int) -> list[int]:
         if isinstance(value, list):
             return value
+        if isinstance(value, int):
+            return [value]
         if not value:
             return []
         return [int(item.strip()) for item in value.split(",") if item.strip()]
