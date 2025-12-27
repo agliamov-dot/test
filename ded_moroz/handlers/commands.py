@@ -114,6 +114,12 @@ def _parse_media_caption(caption: str | None) -> tuple[int | None, str | None]:
     return day, text
 
 
+def _set_welcome_image(value: str, admin_id: int, source: str) -> None:
+    settings.service.welcome_image_url = value
+    os.environ["WELCOME_IMAGE_URL"] = value
+    logger.info("Welcome image updated", extra={"admin_id": admin_id, "source": source})
+
+
 def _format_gift_line(gift: object) -> str:
     if not gift:
         return "Подарок пока не настроен."
@@ -263,17 +269,29 @@ async def _ensure_admin(message: Message) -> bool:
 
 @router.message(F.photo)
 async def admin_photo_gift(message: Message) -> None:
-    await _save_media_gift(message, GiftType.PHOTO)
+    if message.caption and message.caption.strip().startswith("/set_welcome_image"):
+        _set_welcome_image(message.photo[-1].file_id, message.from_user.id, source="photo_command")
+        await message.answer("WELCOME_IMAGE_URL обновлён по фото.")
+    else:
+        await _save_media_gift(message, GiftType.PHOTO)
 
 
 @router.message(F.video)
 async def admin_video_gift(message: Message) -> None:
-    await _save_media_gift(message, GiftType.VIDEO)
+    if message.caption and message.caption.strip().startswith("/set_welcome_image"):
+        _set_welcome_image(message.video.file_id, message.from_user.id, source="video_command")
+        await message.answer("WELCOME_IMAGE_URL обновлён по видео.")
+    else:
+        await _save_media_gift(message, GiftType.VIDEO)
 
 
 @router.message(F.audio)
 async def admin_audio_gift(message: Message) -> None:
-    await _save_media_gift(message, GiftType.AUDIO)
+    if message.caption and message.caption.strip().startswith("/set_welcome_image"):
+        _set_welcome_image(message.audio.file_id, message.from_user.id, source="audio_command")
+        await message.answer("WELCOME_IMAGE_URL обновлён по аудио.")
+    else:
+        await _save_media_gift(message, GiftType.AUDIO)
 
 
 def _format_error_entry(error: object) -> str:
@@ -308,6 +326,21 @@ async def cmd_start(message: Message) -> None:
         )
     else:
         await message.answer(welcome_text, reply_markup=keyboard)
+
+
+@router.message(Command("set_welcome_image"))
+async def cmd_set_welcome_image(message: Message, command: CommandObject) -> None:
+    if not await _ensure_admin(message):
+        return
+    if command.args:
+        value = command.args.strip()
+        _set_welcome_image(value, message.from_user.id, source="command")
+        await message.answer("WELCOME_IMAGE_URL обновлён.")
+    else:
+        await message.answer(
+            "Пришли фото/видео/аудио с подписью /set_welcome_image, "
+            "или укажи ссылку/file_id: /set_welcome_image <url_or_file_id>"
+        )
 
 
 @router.message(Command("pause"))
