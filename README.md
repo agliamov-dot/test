@@ -48,6 +48,7 @@ python -m ded_moroz.scheduler  # отдельный процесс планир�
 
 ## Тесты
 ```bash
+pip install -r requirements-test.txt
 pytest
 ```
 
