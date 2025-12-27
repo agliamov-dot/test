@@ -237,7 +237,11 @@ def _get_bot_and_chat(target: Message | CallbackQuery):
 
 
 def _gift_caption(gift, llm_reply: str | None) -> str:
-    gift_part = _format_gift_line(gift)
+    gift_type = getattr(gift, "gift_type", GiftType.TEXT)
+    if gift_type in {GiftType.PHOTO, GiftType.VIDEO, GiftType.AUDIO}:
+        gift_part = getattr(gift, "gift_text", None) or "Подарок прикреплён."
+    else:
+        gift_part = _format_gift_line(gift)
     if llm_reply:
         return f"{llm_reply}\nТвой подарок: {gift_part}"
     return f"Твой подарок: {gift_part}"
