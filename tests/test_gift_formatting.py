@@ -40,3 +40,6 @@ def test_gift_caption_media_does_not_leak_file_id():
 
     assert "AgACAgIA" not in caption
     assert "Подпись" in caption
+    assert "Твой подарок" in caption
+    assert "🎄" in caption
+    assert ("Жду тебя завтра" in caption) or ("финальный подарок" in caption)

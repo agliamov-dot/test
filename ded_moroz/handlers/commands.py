@@ -236,15 +236,30 @@ def _get_bot_and_chat(target: Message | CallbackQuery):
     return bot, chat_id
 
 
+def _next_prompt_line(current_day: int) -> str:
+    if current_day >= settings.campaign.days:
+        return "🎁 Это был финальный подарок кампании. Спасибо, что был(а) в игре!"
+    next_deadline_dt = day_deadline(current_day + 1)
+    deadline_str = next_deadline_dt.strftime("%d.%m %H:%M %Z")
+    return f"🎅 Жду тебя завтра за следующим подарком. Дедлайн завтра: {deadline_str}."
+
+
 def _gift_caption(gift, llm_reply: str | None) -> str:
     gift_type = getattr(gift, "gift_type", GiftType.TEXT)
     if gift_type in {GiftType.PHOTO, GiftType.VIDEO, GiftType.AUDIO}:
         gift_part = getattr(gift, "gift_text", None) or "Подарок прикреплён."
     else:
         gift_part = _format_gift_line(gift)
+
+    lines: list[str] = []
     if llm_reply:
-        return f"{llm_reply}\nТвой подарок: {gift_part}"
-    return f"Твой подарок: {gift_part}"
+        lines.append(llm_reply)
+    lines.append(f"🎄 **Твой подарок:** {gift_part}")
+
+    current_day, _ = current_day_deadline()
+    lines.append(_next_prompt_line(current_day))
+
+    return "\n".join(lines)
 
 
 async def _send_gift_message(target: Message | CallbackQuery, gift, llm_reply: str | None = None) -> None:
