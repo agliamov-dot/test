@@ -906,7 +906,8 @@ async def cq_stop_cancel(callback: CallbackQuery) -> None:
     await _respond(callback, "Отмена. Я с тобой!", reply_markup=_main_keyboard(status))
 
 
-@router.message(F.text)
+# Игнорируем текст, который выглядит как команда (начинается с "/"), чтобы не перебивать обработчики команд
+@router.message(F.text, ~F.text.startswith("/"))
 async def process_poem(message: Message) -> None:
     user = await get_user_by_telegram(message.from_user.id)
     if not user:
