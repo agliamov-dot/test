@@ -17,7 +17,8 @@ def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         for value in GIFT_TYPE_VALUES:
-            op.execute(sa.text("ALTER TYPE gifttype ADD VALUE IF NOT EXISTS :value").bindparams(value=value))
+            # asyncpg не позволяет использовать bind params в ALTER TYPE, поэтому подставляем литерал
+            op.execute(f"ALTER TYPE gifttype ADD VALUE IF NOT EXISTS '{value}'")
     else:
         # SQLite and other dialects recreate enums automatically from models; nothing to do.
         pass
