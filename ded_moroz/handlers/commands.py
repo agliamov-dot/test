@@ -8,6 +8,8 @@ from typing import Final
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from ded_moroz.config import settings
@@ -120,6 +122,11 @@ def _set_welcome_image(value: str, admin_id: int, source: str) -> None:
     logger.info("Welcome image updated", extra={"admin_id": admin_id, "source": source})
 
 
+class GiftSetupStates(StatesGroup):
+    waiting_text = State()
+    waiting_media = State()
+
+
 def _format_gift_line(gift: object) -> str:
     if not gift:
         return "Подарок пока не настроен."
@@ -201,6 +208,18 @@ async def _save_media_gift(message: Message, gift_type: GiftType) -> None:
         service_name="gifts",
     )
     await message.answer(f"Подарок на день {gift.day} сохранён (тип {gift_type.value}).")
+
+
+def _extract_media_from_message(message: Message) -> tuple[GiftType | None, str | None]:
+    if message.photo:
+        return GiftType.PHOTO, message.photo[-1].file_id
+    if message.video:
+        return GiftType.VIDEO, message.video.file_id
+    if message.audio:
+        return GiftType.AUDIO, message.audio.file_id
+    if message.document and message.document.mime_type and message.document.mime_type.startswith("image/"):
+        return GiftType.PHOTO, message.document.file_id
+    return None, None
 
 
 def _get_bot_and_chat(target: Message | CallbackQuery):
@@ -341,6 +360,103 @@ async def cmd_set_welcome_image(message: Message, command: CommandObject) -> Non
             "Пришли фото/видео/аудио с подписью /set_welcome_image, "
             "или укажи ссылку/file_id: /set_welcome_image <url_or_file_id>"
         )
+
+
+@router.message(Command("setgift"))
+async def cmd_setgift(message: Message, command: CommandObject, state: FSMContext) -> None:
+    if not await _ensure_admin(message):
+        return
+    if not command.args:
+        await message.answer("Используй: /setgift <day>")
+        return
+    try:
+        day = int(command.args.strip())
+    except ValueError:
+        await message.answer("День должен быть числом.")
+        return
+    await state.update_data(day=day)
+    await state.set_state(GiftSetupStates.waiting_text)
+    await message.answer(
+        f"День {day}. Пришли текст подарка. Оставь пустым или /skip, чтобы пропустить текст.",
+        reply_markup=None,
+    )
+
+
+@router.message(GiftSetupStates.waiting_text)
+async def gift_waiting_text(message: Message, state: FSMContext) -> None:
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+    text_content = message.text
+    if text_content is not None:
+        stripped = text_content.strip()
+        if stripped.lower() in {"", "/skip"}:
+            text_content = None
+    else:
+        text_content = None
+
+    await state.update_data(gift_text=text_content)
+    await state.set_state(GiftSetupStates.waiting_media)
+    data = await state.get_data()
+    day = data.get("day")
+    await message.answer(
+        f"День {day}. Пришли медиа (фото/видео/аудио или изображение-файл). "
+        "Оставь пустым или /skip, чтобы сохранить без медиа.",
+        reply_markup=None,
+    )
+
+
+@router.message(GiftSetupStates.waiting_media)
+async def gift_waiting_media(message: Message, state: FSMContext) -> None:
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    day = data.get("day")
+    gift_text = data.get("gift_text")
+
+    skip_media = False
+    if message.text:
+        stripped = message.text.strip()
+        if stripped.lower() in {"", "/skip"}:
+            skip_media = True
+        else:
+            # Это текст, а не медиа — просим повторить
+            await message.answer("Жду медиа (фото/видео/аудио или изображение-файл). Отправь /skip, чтобы без медиа.")
+            return
+
+    gift_type: GiftType = GiftType.TEXT
+    gift_url: str | None = None
+
+    if not skip_media:
+        media_type, media_id = _extract_media_from_message(message)
+        if media_type and media_id:
+            gift_type = media_type
+            gift_url = media_id
+        else:
+            await message.answer("Не похоже на медиа. Отправь фото/видео/аудио или /skip, чтобы без медиа.")
+            return
+
+    gift = await set_gift(day, gift_type, gift_text, gift_url, None)
+    await log_error(
+        SeverityLevel.INFO,
+        "Gift updated",
+        {"day": day, "gift_type": gift_type.value, "admin_id": message.from_user.id, "via": "fsm_flow"},
+        service_name="gifts",
+    )
+
+    caption_text = _gift_caption(gift, None)
+    if gift_type == GiftType.PHOTO and gift_url:
+        await message.answer_photo(gift_url, caption=caption_text)
+    elif gift_type == GiftType.VIDEO and gift_url:
+        await message.answer_video(gift_url, caption=caption_text)
+    elif gift_type == GiftType.AUDIO and gift_url:
+        await message.answer_audio(gift_url, caption=caption_text)
+    else:
+        await message.answer(caption_text)
+
+    await state.clear()
 
 
 @router.message(Command("pause"))
