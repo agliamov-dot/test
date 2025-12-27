@@ -358,7 +358,7 @@ async def cmd_start(message: Message) -> None:
         await message.answer(welcome_text, reply_markup=keyboard)
 
 
-@router.message(Command("set_welcome_image"))
+@router.message(StateFilter("*"), Command("set_welcome_image"))
 async def cmd_set_welcome_image(message: Message, command: CommandObject, state: FSMContext) -> None:
     if not await _ensure_admin(message):
         return
@@ -376,7 +376,7 @@ async def cmd_set_welcome_image(message: Message, command: CommandObject, state:
     )
 
 
-@router.message(Command("setgift"))
+@router.message(StateFilter("*"), Command("setgift"))
 async def cmd_setgift(message: Message, command: CommandObject, state: FSMContext) -> None:
     if not await _ensure_admin(message):
         return
