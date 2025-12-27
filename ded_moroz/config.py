@@ -69,7 +69,15 @@ class DatabaseConfig(BaseSettings):
 class AdminConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ADMIN_", extra="ignore")
 
-    admin_ids: List[int] = Field(default_factory=list, alias="IDS")
+    admin_ids: List[int] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "IDS",            # стандартный alias с префиксом ADMIN_
+            "ADMIN_IDS",      # без префикса (часто задавали так)
+            "ADMINS__IDS",    # вложенный синтаксис pydantic settings
+            "ADMIN_ADMIN_IDS" # префикс + имя поля
+        ),
+    )
 
     @field_validator("admin_ids", mode="before")
     @classmethod
