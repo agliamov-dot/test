@@ -37,12 +37,74 @@ llm_client = OpenRouterClient()
 logger = logging.getLogger(__name__)
 
 
+class GiftParseError(ValueError):
+    pass
+
+
+def _parse_set_gift_args(args: str) -> tuple[int, GiftType, str | None, str | None, dict | None]:
+    if not args:
+        raise GiftParseError("Нужно указать день и содержимое подарка.")
+
+    day_part, *rest = args.split(maxsplit=1)
+    try:
+        day = int(day_part)
+    except ValueError as exc:  # noqa: B904
+        raise GiftParseError("День должен быть числом.") from exc
+
+    if not rest:
+        raise GiftParseError("Нужно указать текст или тип подарка.")
+
+    remainder = rest[0].strip()
+    if not remainder:
+        raise GiftParseError("Нужно указать текст или тип подарка.")
+
+    head, *tail = remainder.split(maxsplit=1)
+    content = tail[0] if tail else ""
+    if head in {t.value for t in GiftType}:
+        gift_type = GiftType(head)
+    else:
+        # Явного типа нет — считаем текстом и берём всю строку целиком
+        gift_type = GiftType.TEXT
+        content = remainder
+
+    gift_text: str | None = None
+    gift_url: str | None = None
+    payload_data: dict | None = None
+
+    if gift_type == GiftType.TEXT:
+        if not content:
+            raise GiftParseError("Нужно указать текст подарка.")
+        gift_text = content
+    elif gift_type == GiftType.URL:
+        if not content:
+            raise GiftParseError("Нужно указать ссылку.")
+        gift_url = content
+    elif gift_type == GiftType.PAYLOAD:
+        if not content:
+            raise GiftParseError("Payload должен быть валидным JSON.")
+        try:
+            payload_data = json.loads(content)
+        except json.JSONDecodeError as exc:  # noqa: B904
+            raise GiftParseError("Payload должен быть валидным JSON.") from exc
+    elif gift_type in {GiftType.PHOTO, GiftType.VIDEO, GiftType.AUDIO}:
+        if not content:
+            raise GiftParseError("Нужно указать ссылку или file_id на медиа.")
+        if " " in content:
+            gift_url, gift_text = content.split(maxsplit=1)
+        else:
+            gift_url = content
+    else:  # pragma: no cover - запасной случай
+        raise GiftParseError("Неподдерживаемый тип подарка.")
+
+    return day, gift_type, gift_text, gift_url, payload_data
+
+
 def _format_gift_line(gift: object) -> str:
     if not gift:
         return "Подарок пока не настроен."
     if getattr(gift, "gift_type", None) == GiftType.PAYLOAD and getattr(gift, "payload", None) is not None:
         return json.dumps(gift.payload, ensure_ascii=False)
-    if getattr(gift, "gift_type", None) == GiftType.URL and getattr(gift, "gift_url", None):
+    if getattr(gift, "gift_type", None) in {GiftType.URL, GiftType.PHOTO, GiftType.VIDEO, GiftType.AUDIO} and getattr(gift, "gift_url", None):
         return gift.gift_url
     if getattr(gift, "gift_text", None):
         return gift.gift_text
@@ -85,6 +147,54 @@ async def _respond(target: Message | CallbackQuery, text: str, reply_markup: Inl
         await message.answer(text, reply_markup=reply_markup)
 
 
+def _get_bot_and_chat(target: Message | CallbackQuery):
+    if isinstance(target, CallbackQuery):
+        bot = target.bot
+        chat_id = target.message.chat.id if target.message else target.from_user.id
+    else:
+        bot = target.bot
+        chat_id = target.chat.id
+    return bot, chat_id
+
+
+def _gift_caption(gift, llm_reply: str | None) -> str:
+    gift_part = _format_gift_line(gift)
+    if llm_reply:
+        return f"{llm_reply}\nТвой подарок: {gift_part}"
+    return f"Твой подарок: {gift_part}"
+
+
+async def _send_gift_message(target: Message | CallbackQuery, gift, llm_reply: str | None = None) -> None:
+    if isinstance(target, CallbackQuery):
+        await target.answer()
+    caption_text = _gift_caption(gift, llm_reply)
+    if not gift or not getattr(gift, "gift_type", None):
+        await _respond(target, caption_text)
+        return
+
+    gift_type = getattr(gift, "gift_type", GiftType.TEXT)
+    media = getattr(gift, "gift_url", None)
+    bot, chat_id = _get_bot_and_chat(target)
+
+    if gift_type == GiftType.TEXT or not media:
+        await _respond(target, caption_text)
+        return
+
+    if gift_type == GiftType.URL:
+        await _respond(target, caption_text)
+        return
+
+    # Media types: use Telegram send_* APIs
+    if gift_type == GiftType.PHOTO:
+        await bot.send_photo(chat_id=chat_id, photo=media, caption=caption_text)
+    elif gift_type == GiftType.VIDEO:
+        await bot.send_video(chat_id=chat_id, video=media, caption=caption_text)
+    elif gift_type == GiftType.AUDIO:
+        await bot.send_audio(chat_id=chat_id, audio=media, caption=caption_text)
+    else:
+        await _respond(target, caption_text)
+
+
 async def _ensure_admin(message: Message) -> bool:
     telegram_id = message.from_user.id
     if is_admin(telegram_id):
@@ -121,11 +231,18 @@ async def cmd_start(message: Message) -> None:
         await update_status(user.id, UserStatus.ACTIVE)
         user.status = UserStatus.ACTIVE
     keyboard = _main_keyboard(user.status)
-    await message.answer(
+    welcome_text = (
         "Хо-хо-хо! Ты в игре. Каждый день жду твой стих, чтобы открыть подарок. "
-        "Пиши текстом, а я проверю через волшебство ИИ.",
-        reply_markup=keyboard,
+        "Пиши текстом, а я проверю через волшебство ИИ."
     )
+    if settings.service.welcome_image_url:
+        await message.answer_photo(
+            settings.service.welcome_image_url,
+            caption=welcome_text,
+            reply_markup=keyboard,
+        )
+    else:
+        await message.answer(welcome_text, reply_markup=keyboard)
 
 
 @router.message(Command("pause"))
@@ -210,40 +327,11 @@ async def cmd_admin_user(message: Message, command: CommandObject) -> None:
 async def cmd_set_gift(message: Message, command: CommandObject) -> None:
     if not await _ensure_admin(message):
         return
-    if not command.args:
-        await message.answer("Используй: /set_gift <day> <текст> [url]")
+    try:
+        day, gift_type, gift_text, gift_url, payload_data = _parse_set_gift_args(command.args or "")
+    except GiftParseError as exc:
+        await message.answer(str(exc))
         return
-    parts = command.args.split(maxsplit=2)
-    if len(parts) < 2:
-        await message.answer("Нужно указать день и текст")
-        return
-    day = int(parts[0])
-    raw_type_or_text = parts[1]
-    gift_type = GiftType.TEXT
-    payload_data: dict | None = None
-    gift_text: str | None = None
-    gift_url: str | None = None
-
-    if raw_type_or_text in {t.value for t in GiftType}:
-        gift_type = GiftType(raw_type_or_text)
-        if len(parts) < 3:
-            await message.answer("Нужно указать содержимое подарка для выбранного типа.")
-            return
-        content = parts[2]
-    else:
-        content = raw_type_or_text
-        gift_url = parts[2] if len(parts) == 3 else None
-
-    if gift_type == GiftType.TEXT:
-        gift_text = content
-    elif gift_type == GiftType.URL:
-        gift_url = content
-    elif gift_type == GiftType.PAYLOAD:
-        try:
-            payload_data = json.loads(content)
-        except json.JSONDecodeError:
-            await message.answer("Payload должен быть валидным JSON.")
-            return
 
     gift = await set_gift(day, gift_type, gift_text, gift_url, payload_data)
     await log_error(
@@ -468,8 +556,10 @@ async def _handle_gift_request(target: Message | CallbackQuery) -> None:
 
     if await submissions_service.has_submission(user.id, day):
         gift = await get_gift_for_day(day)
-        gift_line = _format_gift_line(gift)
-        await _respond(target, f"На сегодня всё! {gift_line}")
+        if gift:
+            await _send_gift_message(target, gift, llm_reply="На сегодня всё! Держи подарок ещё раз:")
+        else:
+            await _respond(target, "На сегодня всё! Подарок пока не настроен.")
         return
 
     attempts = await submissions_service.count_attempts(user.id, day)
@@ -621,8 +711,10 @@ async def process_poem(message: Message) -> None:
             except submissions_service.SubmissionExistsError:
                 pass
             gift = await get_gift_for_day(day)
-            gift_line = _format_gift_line(gift)
-            await message.answer(f"{llm_result.ded_moroz_reply}\nТвой подарок: {gift_line}")
+            if gift:
+                await _send_gift_message(message, gift, llm_reply=llm_result.ded_moroz_reply)
+            else:
+                await message.answer(f"{llm_result.ded_moroz_reply}\nПодарок пока не настроен.")
         else:
             attempts_left = settings.campaign.max_attempts_per_day - attempts - 1
             suffix = f" Осталось попыток: {attempts_left}." if attempts_left > 0 else ""

@@ -102,6 +102,7 @@ class ServiceConfig(BaseSettings):
     bot_token: str = Field(..., alias="BOT_TOKEN")
     redis_dsn: str | None = Field(None, alias="REDIS_DSN")
     chunk_size: int = Field(100, alias="BATCH_CHUNK_SIZE")
+    welcome_image_url: str | None = Field(None, alias="WELCOME_IMAGE_URL")
 
 
 class Settings(BaseModel):

@@ -39,6 +39,12 @@ python -m ded_moroz.scheduler  # отдельный процесс планир�
 - `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL` — настройки OpenRouter.
 - `CAMPAIGN_START_DATE` (YYYY-MM-DD), `CAMPAIGN_DAYS`, `CAMPAIGN_REMINDER_DEADLINE_HOUR`, `CAMPAIGN_MISSED_DEADLINE_HOUR`, `CAMPAIGN_QUIET_HOURS_START`, `CAMPAIGN_QUIET_HOURS_END`, `CAMPAIGN_MAX_ATTEMPTS_PER_DAY`, `CAMPAIGN_TZ`.
 - `ADMIN_TG_IDS` — ID админов через запятую (поддерживаются алиасы `ADMIN_IDS`, `ADMINS__IDS`).
+- `WELCOME_IMAGE_URL` — (опционально) ссылка/file_id на картинку в приветственном сообщении `/start`.
+
+### Подарки
+- Текст без указания типа: `/set_gift 1 Мой текстовый подарок` (не обрезается).
+- Ссылки: `/set_gift 2 url https://example.com/bonus`.
+- Медиа: `/set_gift 3 photo https://example.com/pic.jpg Подпись к картинке` (поддерживаются `photo|video|audio`, caption необязательный).
 
 ## Тесты
 ```bash

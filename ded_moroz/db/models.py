@@ -45,6 +45,9 @@ class GiftType(str, enum.Enum):
     TEXT = "text"
     URL = "url"
     PAYLOAD = "payload"
+    PHOTO = "photo"
+    VIDEO = "video"
+    AUDIO = "audio"
 
 
 class NotificationType(str, enum.Enum):
