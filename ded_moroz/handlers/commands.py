@@ -890,6 +890,8 @@ async def process_poem(message: Message) -> None:
     # Если это команда (начинается с "/") — уходим, чтобы её обработал командный хендлер
     if message.text and message.text.startswith("/"):
         return
+    if message.entities and any(ent.type == "bot_command" for ent in message.entities):
+        return
     user = await get_user_by_telegram(message.from_user.id)
     if not user:
         if is_admin(message.from_user.id):
