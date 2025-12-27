@@ -7,7 +7,7 @@ from datetime import date
 from typing import Final
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -123,6 +123,11 @@ def _set_welcome_image(value: str, admin_id: int, source: str) -> None:
 
 
 class GiftSetupStates(StatesGroup):
+    waiting_text = State()
+    waiting_media = State()
+
+
+class WelcomeSetupStates(StatesGroup):
     waiting_text = State()
     waiting_media = State()
 
@@ -288,6 +293,8 @@ async def _ensure_admin(message: Message) -> bool:
 
 @router.message(F.photo)
 async def admin_photo_gift(message: Message) -> None:
+    if message.from_user and await message.bot.state.get_state(chat_id=message.chat.id, user_id=message.from_user.id):
+        return  # FSM handlers take precedence
     if message.caption and message.caption.strip().startswith("/set_welcome_image"):
         _set_welcome_image(message.photo[-1].file_id, message.from_user.id, source="photo_command")
         await message.answer("WELCOME_IMAGE_URL обновлён по фото.")
@@ -297,6 +304,8 @@ async def admin_photo_gift(message: Message) -> None:
 
 @router.message(F.video)
 async def admin_video_gift(message: Message) -> None:
+    if message.from_user and await message.bot.state.get_state(chat_id=message.chat.id, user_id=message.from_user.id):
+        return
     if message.caption and message.caption.strip().startswith("/set_welcome_image"):
         _set_welcome_image(message.video.file_id, message.from_user.id, source="video_command")
         await message.answer("WELCOME_IMAGE_URL обновлён по видео.")
@@ -306,6 +315,8 @@ async def admin_video_gift(message: Message) -> None:
 
 @router.message(F.audio)
 async def admin_audio_gift(message: Message) -> None:
+    if message.from_user and await message.bot.state.get_state(chat_id=message.chat.id, user_id=message.from_user.id):
+        return
     if message.caption and message.caption.strip().startswith("/set_welcome_image"):
         _set_welcome_image(message.audio.file_id, message.from_user.id, source="audio_command")
         await message.answer("WELCOME_IMAGE_URL обновлён по аудио.")
@@ -348,18 +359,21 @@ async def cmd_start(message: Message) -> None:
 
 
 @router.message(Command("set_welcome_image"))
-async def cmd_set_welcome_image(message: Message, command: CommandObject) -> None:
+async def cmd_set_welcome_image(message: Message, command: CommandObject, state: FSMContext) -> None:
     if not await _ensure_admin(message):
         return
     if command.args:
         value = command.args.strip()
         _set_welcome_image(value, message.from_user.id, source="command")
         await message.answer("WELCOME_IMAGE_URL обновлён.")
-    else:
-        await message.answer(
-            "Пришли фото/видео/аудио с подписью /set_welcome_image, "
-            "или укажи ссылку/file_id: /set_welcome_image <url_or_file_id>"
-        )
+        return
+
+    await state.clear()
+    await state.set_state(WelcomeSetupStates.waiting_text)
+    await message.answer(
+        "Пришли текст приветствия для /start. Оставь пустым или /skip, чтобы оставить текст по умолчанию.",
+        reply_markup=None,
+    )
 
 
 @router.message(Command("setgift"))
@@ -456,6 +470,61 @@ async def gift_waiting_media(message: Message, state: FSMContext) -> None:
     else:
         await message.answer(caption_text)
 
+    await state.clear()
+
+
+@router.message(WelcomeSetupStates.waiting_text)
+async def welcome_waiting_text(message: Message, state: FSMContext) -> None:
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+    text_content = message.text
+    if text_content is not None:
+        stripped = text_content.strip()
+        if stripped.lower() in {"", "/skip"}:
+            text_content = None
+    else:
+        text_content = None
+
+    await state.update_data(welcome_text=text_content)
+    await state.set_state(WelcomeSetupStates.waiting_media)
+    await message.answer("Пришли картинку (фото или файл-изображение). Отправь /skip, чтобы без картинки.", reply_markup=None)
+
+
+@router.message(WelcomeSetupStates.waiting_media)
+async def welcome_waiting_media(message: Message, state: FSMContext) -> None:
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    custom_text = data.get("welcome_text")
+
+    skip_media = False
+    if message.text:
+        stripped = message.text.strip()
+        if stripped.lower() in {"", "/skip"}:
+            skip_media = True
+        else:
+            await message.answer("Жду картинку (фото или файл-изображение) или /skip, чтобы без картинки.")
+            return
+
+    media_type, media_id = _extract_media_from_message(message)
+    if skip_media:
+        await message.answer("Картинка не получена, приветствие осталось без обновления.")
+        await state.clear()
+        return
+
+    if media_type != GiftType.PHOTO or not media_id:
+        await message.answer("Отправь фото или файл-изображение. Видео/аудио не принимаются для приветствия.")
+        return
+
+    _set_welcome_image(media_id, message.from_user.id, source="welcome_fsm")
+    preview_caption = custom_text or (
+        "Хо-хо-хо! Ты в игре. Каждый день жду твой стих, чтобы открыть подарок. "
+        "Пиши текстом, а я проверю через волшебство ИИ."
+    )
+    await message.answer_photo(media_id, caption=preview_caption)
     await state.clear()
 
 
