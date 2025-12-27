@@ -887,6 +887,9 @@ async def cq_stop_cancel(callback: CallbackQuery) -> None:
 # Игнорируем текст, который выглядит как команда (начинается с "/"), чтобы не перебивать обработчики команд
 @router.message(F.text, ~F.text.startswith("/"))
 async def process_poem(message: Message) -> None:
+    # Если это команда (начинается с "/") — уходим, чтобы её обработал командный хендлер
+    if message.text and message.text.startswith("/"):
+        return
     user = await get_user_by_telegram(message.from_user.id)
     if not user:
         if is_admin(message.from_user.id):
