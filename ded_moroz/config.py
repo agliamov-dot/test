@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import os
 from datetime import date
-from typing import List
 
-from pydantic import BaseModel, Field, AliasChoices, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if os.path.exists(".env"):
     load_dotenv()
@@ -67,15 +66,21 @@ class DatabaseConfig(BaseSettings):
 
 
 class AdminConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="ADMIN_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="ADMIN_",
+        extra="ignore",
+    )
 
-    admin_ids: List[int] = Field(
+    admin_ids: list[int] | str | int = Field(
         default_factory=list,
         validation_alias=AliasChoices(
             "IDS",            # стандартный alias с префиксом ADMIN_
             "ADMIN_IDS",      # без префикса (часто задавали так)
             "ADMINS__IDS",    # вложенный синтаксис pydantic settings
-            "ADMIN_ADMIN_IDS" # префикс + имя поля
+            "ADMIN_ADMIN_IDS", # префикс + имя поля
+            "TG_IDS",          # официальный параметр ТЗ ADMIN_TG_IDS
+            "ADMIN_TG_IDS",    # вариант без префикса
         ),
     )
 

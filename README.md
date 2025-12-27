@@ -38,7 +38,7 @@ python -m ded_moroz.scheduler  # отдельный процесс планир�
 - `DATABASE_URL` — async URL PostgreSQL (или SQLite для локальных тестов).
 - `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL` — настройки OpenRouter.
 - `CAMPAIGN_START_DATE` (YYYY-MM-DD), `CAMPAIGN_DAYS`, `CAMPAIGN_REMINDER_DEADLINE_HOUR`, `CAMPAIGN_MISSED_DEADLINE_HOUR`, `CAMPAIGN_QUIET_HOURS_START`, `CAMPAIGN_QUIET_HOURS_END`, `CAMPAIGN_MAX_ATTEMPTS_PER_DAY`, `CAMPAIGN_TZ`.
-- `ADMIN_IDS` — ID админов через запятую.
+- `ADMIN_TG_IDS` — ID админов через запятую (поддерживаются алиасы `ADMIN_IDS`, `ADMINS__IDS`).
 
 ## Тесты
 ```bash
