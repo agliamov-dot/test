@@ -128,7 +128,6 @@ class GiftSetupStates(StatesGroup):
 
 
 class WelcomeSetupStates(StatesGroup):
-    waiting_text = State()
     waiting_media = State()
 
 
@@ -369,11 +368,8 @@ async def cmd_set_welcome_image(message: Message, command: CommandObject, state:
         return
 
     await state.clear()
-    await state.set_state(WelcomeSetupStates.waiting_text)
-    await message.answer(
-        "Пришли текст приветствия для /start. Оставь пустым или /skip, чтобы оставить текст по умолчанию.",
-        reply_markup=None,
-    )
+    await state.set_state(WelcomeSetupStates.waiting_media)
+    await message.answer("Пришли приветственную картинку/видео/аудио (или файл-изображение). /cancel — выйти.", reply_markup=None)
 
 
 @router.message(StateFilter("*"), Command("setgift"))
@@ -473,58 +469,40 @@ async def gift_waiting_media(message: Message, state: FSMContext) -> None:
     await state.clear()
 
 
-@router.message(WelcomeSetupStates.waiting_text)
-async def welcome_waiting_text(message: Message, state: FSMContext) -> None:
-    if not await _ensure_admin(message):
-        await state.clear()
-        return
-    text_content = message.text
-    if text_content is not None:
-        stripped = text_content.strip()
-        if stripped.lower() in {"", "/skip"}:
-            text_content = None
-    else:
-        text_content = None
-
-    await state.update_data(welcome_text=text_content)
-    await state.set_state(WelcomeSetupStates.waiting_media)
-    await message.answer("Пришли картинку (фото или файл-изображение). Отправь /skip, чтобы без картинки.", reply_markup=None)
-
-
 @router.message(WelcomeSetupStates.waiting_media)
 async def welcome_waiting_media(message: Message, state: FSMContext) -> None:
     if not await _ensure_admin(message):
         await state.clear()
         return
 
-    data = await state.get_data()
-    custom_text = data.get("welcome_text")
-
-    skip_media = False
     if message.text:
         stripped = message.text.strip()
-        if stripped.lower() in {"", "/skip"}:
-            skip_media = True
+        if stripped.lower() in {"/cancel", "/skip"}:
+            await message.answer("Настройка приветствия отменена.")
+            await state.clear()
+            return
         else:
-            await message.answer("Жду картинку (фото или файл-изображение) или /skip, чтобы без картинки.")
+            await message.answer("Жду медиа: фото/файл-изображение, видео или аудио. /cancel — выйти.")
             return
 
     media_type, media_id = _extract_media_from_message(message)
-    if skip_media:
-        await message.answer("Картинка не получена, приветствие осталось без обновления.")
-        await state.clear()
-        return
-
-    if media_type != GiftType.PHOTO or not media_id:
-        await message.answer("Отправь фото или файл-изображение. Видео/аудио не принимаются для приветствия.")
+    if not media_type or not media_id:
+        await message.answer("Отправь фото/файл-изображение, видео или аудио. /cancel — выйти.")
         return
 
     _set_welcome_image(media_id, message.from_user.id, source="welcome_fsm")
-    preview_caption = custom_text or (
+    preview_caption = (
         "Хо-хо-хо! Ты в игре. Каждый день жду твой стих, чтобы открыть подарок. "
         "Пиши текстом, а я проверю через волшебство ИИ."
     )
-    await message.answer_photo(media_id, caption=preview_caption)
+    if media_type == GiftType.PHOTO:
+        await message.answer_photo(media_id, caption=preview_caption)
+    elif media_type == GiftType.VIDEO:
+        await message.answer_video(media_id, caption=preview_caption)
+    elif media_type == GiftType.AUDIO:
+        await message.answer_audio(media_id, caption=preview_caption)
+    else:
+        await message.answer(preview_caption)
     await state.clear()
 
 
