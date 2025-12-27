@@ -104,12 +104,17 @@ def _format_gift_line(gift: object) -> str:
         return "Подарок пока не настроен."
     if getattr(gift, "gift_type", None) == GiftType.PAYLOAD and getattr(gift, "payload", None) is not None:
         return json.dumps(gift.payload, ensure_ascii=False)
-    if getattr(gift, "gift_type", None) in {GiftType.URL, GiftType.PHOTO, GiftType.VIDEO, GiftType.AUDIO} and getattr(gift, "gift_url", None):
-        return gift.gift_url
-    if getattr(gift, "gift_text", None):
-        return gift.gift_text
-    if getattr(gift, "gift_url", None):
-        return gift.gift_url
+    text_part = getattr(gift, "gift_text", None)
+    url_part = getattr(gift, "gift_url", None)
+    parts: list[str] = []
+    if text_part:
+        parts.append(text_part)
+    if url_part and getattr(gift, "gift_type", None) in {GiftType.URL, GiftType.PHOTO, GiftType.VIDEO, GiftType.AUDIO}:
+        parts.append(url_part)
+    if url_part and not parts:
+        parts.append(url_part)
+    if parts:
+        return "\n".join(parts)
     return "Подарок пока не настроен."
 
 
