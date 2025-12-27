@@ -99,6 +99,21 @@ def _parse_set_gift_args(args: str) -> tuple[int, GiftType, str | None, str | No
     return day, gift_type, gift_text, gift_url, payload_data
 
 
+def _parse_media_caption(caption: str | None) -> tuple[int | None, str | None]:
+    """
+    Ожидаем: "<day> [подпись]". Если день не число — вернём (None, caption).
+    """
+    if not caption:
+        return None, None
+    parts = caption.strip().split(maxsplit=1)
+    try:
+        day = int(parts[0])
+    except ValueError:
+        return None, caption
+    text = parts[1] if len(parts) > 1 else None
+    return day, text
+
+
 def _format_gift_line(gift: object) -> str:
     if not gift:
         return "Подарок пока не настроен."
@@ -150,6 +165,36 @@ async def _respond(target: Message | CallbackQuery, text: str, reply_markup: Inl
         message = target
     if message:
         await message.answer(text, reply_markup=reply_markup)
+
+
+async def _save_media_gift(message: Message, gift_type: GiftType) -> None:
+    if not is_admin(message.from_user.id):
+        await message.answer("Пришли стих текстом — медиа принимает только админ.")
+        return
+
+    day, caption = _parse_media_caption(message.caption)
+    if day is None:
+        await message.answer("Укажи день в подписи: \"<день> [текст подарка]\".")
+        return
+
+    if gift_type == GiftType.PHOTO and message.photo:
+        file_id = message.photo[-1].file_id
+    elif gift_type == GiftType.VIDEO and message.video:
+        file_id = message.video.file_id
+    elif gift_type == GiftType.AUDIO and message.audio:
+        file_id = message.audio.file_id
+    else:
+        await message.answer("Не удалось прочитать медиа. Попробуй ещё раз.")
+        return
+
+    gift = await set_gift(day, gift_type, caption, file_id, None)
+    await log_error(
+        SeverityLevel.INFO,
+        "Gift updated",
+        {"day": day, "gift_type": gift_type.value, "admin_id": message.from_user.id, "via": "media_upload"},
+        service_name="gifts",
+    )
+    await message.answer(f"Подарок на день {gift.day} сохранён (тип {gift_type.value}).")
 
 
 def _get_bot_and_chat(target: Message | CallbackQuery):
@@ -214,6 +259,21 @@ async def _ensure_admin(message: Message) -> bool:
     logger.warning("Admin access denied", extra={"telegram_id": telegram_id, "command": message.text})
     await message.answer("У тебя нет прав администратора.")
     return False
+
+
+@router.message(F.photo)
+async def admin_photo_gift(message: Message) -> None:
+    await _save_media_gift(message, GiftType.PHOTO)
+
+
+@router.message(F.video)
+async def admin_video_gift(message: Message) -> None:
+    await _save_media_gift(message, GiftType.VIDEO)
+
+
+@router.message(F.audio)
+async def admin_audio_gift(message: Message) -> None:
+    await _save_media_gift(message, GiftType.AUDIO)
 
 
 def _format_error_entry(error: object) -> str:
