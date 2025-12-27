@@ -886,15 +886,11 @@ async def process_poem(message: Message, state: FSMContext) -> None:
         return
     if message.entities and any(ent.type == "bot_command" for ent in message.entities):
         return
-    current_state = await state.get_state()
-    if current_state and is_admin(message.from_user.id):
-        # Если админ внутри любого FSM-флоу, пропускаем стиховой хендлер
+    if is_admin(message.from_user.id):
+        # Админские сообщения не должны уходить в игровой хендлер (чтобы не мешать настройкам)
         return
     user = await get_user_by_telegram(message.from_user.id)
     if not user:
-        if is_admin(message.from_user.id):
-            # Админам не требуем /start: их команды должны работать всегда
-            return
         await message.answer("Сначала нажми /start, чтобы начать игру.")
         return
     if user.status == UserStatus.STOPPED:
