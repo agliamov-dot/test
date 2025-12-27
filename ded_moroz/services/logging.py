@@ -27,6 +27,20 @@ async def log_error(
         return record
 
 
+async def fetch_recent_errors(
+    limit: int = 20, service_name: str | None = None, message_query: str | None = None
+) -> list[ErrorLog]:
+    async with session_scope() as session:
+        query = select(ErrorLog)
+        if service_name:
+            query = query.where(ErrorLog.service_name == service_name)
+        if message_query:
+            query = query.where(ErrorLog.message.ilike(f"%{message_query}%"))
+        query = query.order_by(ErrorLog.id.desc()).limit(limit)
+        result = await session.execute(query)
+        return list(result.scalars())
+
+
 async def fetch_pending_admin_errors(limit: int = 50) -> list[AdminErrorQueue]:
     async with session_scope() as session:
         result = await session.execute(
