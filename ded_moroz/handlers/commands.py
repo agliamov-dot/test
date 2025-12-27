@@ -889,6 +889,9 @@ async def cq_stop_cancel(callback: CallbackQuery) -> None:
 async def process_poem(message: Message) -> None:
     user = await get_user_by_telegram(message.from_user.id)
     if not user:
+        if is_admin(message.from_user.id):
+            # Админам не требуем /start: их команды должны работать всегда
+            return
         await message.answer("Сначала нажми /start, чтобы начать игру.")
         return
     if user.status == UserStatus.STOPPED:
