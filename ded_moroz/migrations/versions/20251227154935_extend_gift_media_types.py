@@ -17,7 +17,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         # Расширяем длину версии, чтобы длинный revision помещался в alembic_version
-        op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)")
+        op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)")
         for value in GIFT_TYPE_VALUES:
             # asyncpg не позволяет использовать bind params в ALTER TYPE, поэтому подставляем литерал
             op.execute(f"ALTER TYPE gifttype ADD VALUE IF NOT EXISTS '{value}'")
