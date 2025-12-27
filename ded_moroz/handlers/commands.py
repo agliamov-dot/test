@@ -290,10 +290,8 @@ async def _ensure_admin(message: Message) -> bool:
     return False
 
 
-@router.message(F.photo)
+@router.message(StateFilter(None), F.photo)
 async def admin_photo_gift(message: Message) -> None:
-    if message.from_user and await message.bot.state.get_state(chat_id=message.chat.id, user_id=message.from_user.id):
-        return  # FSM handlers take precedence
     if message.caption and message.caption.strip().startswith("/set_welcome_image"):
         _set_welcome_image(message.photo[-1].file_id, message.from_user.id, source="photo_command")
         await message.answer("WELCOME_IMAGE_URL обновлён по фото.")
@@ -301,10 +299,8 @@ async def admin_photo_gift(message: Message) -> None:
         await _save_media_gift(message, GiftType.PHOTO)
 
 
-@router.message(F.video)
+@router.message(StateFilter(None), F.video)
 async def admin_video_gift(message: Message) -> None:
-    if message.from_user and await message.bot.state.get_state(chat_id=message.chat.id, user_id=message.from_user.id):
-        return
     if message.caption and message.caption.strip().startswith("/set_welcome_image"):
         _set_welcome_image(message.video.file_id, message.from_user.id, source="video_command")
         await message.answer("WELCOME_IMAGE_URL обновлён по видео.")
@@ -312,10 +308,8 @@ async def admin_video_gift(message: Message) -> None:
         await _save_media_gift(message, GiftType.VIDEO)
 
 
-@router.message(F.audio)
+@router.message(StateFilter(None), F.audio)
 async def admin_audio_gift(message: Message) -> None:
-    if message.from_user and await message.bot.state.get_state(chat_id=message.chat.id, user_id=message.from_user.id):
-        return
     if message.caption and message.caption.strip().startswith("/set_welcome_image"):
         _set_welcome_image(message.audio.file_id, message.from_user.id, source="audio_command")
         await message.answer("WELCOME_IMAGE_URL обновлён по аудио.")
