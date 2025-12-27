@@ -12,6 +12,7 @@ async def get_or_create_user(telegram_id: int, username: str | None, first_name:
     async with session_scope() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
+        now = datetime.now(timezone.utc)
         if user is None:
             user = User(
                 telegram_id=telegram_id,
@@ -19,14 +20,16 @@ async def get_or_create_user(telegram_id: int, username: str | None, first_name:
                 first_name=first_name,
                 last_name=last_name,
                 status=UserStatus.ACTIVE,
-                last_seen_at=datetime.now(timezone.utc),
+                last_seen_at=now,
             )
             session.add(user)
+            await session.flush()
         else:
+            # идемпотентность: не создаём дубликаты, обновляем свежие данные
             user.username = username
             user.first_name = first_name
             user.last_name = last_name
-            user.last_seen_at = datetime.now(timezone.utc)
+            user.last_seen_at = now
         return user
 
 
