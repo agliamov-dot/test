@@ -23,6 +23,7 @@ from ded_moroz.services.users import get_or_create_user, get_user_by_telegram, u
 from ded_moroz.utils.time import (
     current_campaign_day,
     current_day_deadline,
+    day_deadline,
     is_after_deadline,
     is_before_start,
     is_campaign_active,
