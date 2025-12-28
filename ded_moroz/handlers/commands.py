@@ -152,15 +152,8 @@ def _format_gift_line(gift: object) -> str:
 
 
 def _main_keyboard(user_status: UserStatus) -> InlineKeyboardMarkup:
-    inline_keyboard = [
-        [InlineKeyboardButton(text="Сдать стих за сегодня", callback_data="gift:submit")],
-        [InlineKeyboardButton(text="Статус", callback_data="status:show")],
-    ]
-    if user_status == UserStatus.PAUSED:
-        inline_keyboard.append([InlineKeyboardButton(text="Продолжить", callback_data="user:resume")])
-    else:
-        inline_keyboard.append([InlineKeyboardButton(text="Пауза", callback_data="user:pause")])
-    inline_keyboard.append([InlineKeyboardButton(text="Остановить", callback_data="user:stop_confirm")])
+    # Оставляем только основную кнопку «Сдать стих», остальные обработчики остаются для обратной совместимости.
+    inline_keyboard = [[InlineKeyboardButton(text="Сдать стих за сегодня", callback_data="gift:submit")]]
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 
