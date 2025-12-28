@@ -24,7 +24,7 @@ class CampaignConfig(BaseSettings):
     missed_deadline_hour: int = Field(
         22, validation_alias=AliasChoices("CAMPAIGN_MISSED_DEADLINE_HOUR", "CAMPAIGN_MISSED_HOUR")
     )
-    timezone: str = Field("UTC", validation_alias=AliasChoices("CAMPAIGN_TZ", "CAMPAIGN_TIMEZONE"))
+    timezone: str = Field("Europe/Moscow", validation_alias=AliasChoices("CAMPAIGN_TZ", "CAMPAIGN_TIMEZONE"))
     quiet_hours_start: int = Field(23, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_START"))
     quiet_hours_end: int = Field(8, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_END"))
     max_attempts_per_day: int = Field(
