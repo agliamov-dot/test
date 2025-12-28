@@ -6,6 +6,8 @@ import os
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+pytest_plugins = ("pytest_asyncio",)
+
 # Set environment before importing application modules
 os.environ.setdefault("BOT_TOKEN", "test-token")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
