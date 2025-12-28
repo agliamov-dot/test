@@ -821,11 +821,7 @@ async def _handle_gift_request(target: Message | CallbackQuery) -> None:
         await _respond(target, "Кампания уже завершилась. Спасибо за участие!")
         return
     if is_quiet_hours():
-        quiet_end = quiet_hours_end()
-        await _respond(
-            target,
-            f"Сейчас тихие часы. Жду твой стих после {quiet_end.strftime('%d.%m %H:%M %Z')}.",
-        )
+        await _respond(target, "Я сплю. Жди 6:00.")
         return
 
     day, deadline_dt = current_day_deadline()
@@ -935,8 +931,7 @@ async def process_poem(message: Message, state: FSMContext) -> None:
         await message.answer("Кампания уже завершилась. Спасибо за участие!")
         return
     if is_quiet_hours():
-        quiet_end = quiet_hours_end()
-        await message.answer(f"Сейчас тихие часы. Жду стих после {quiet_end.strftime('%d.%m %H:%M %Z')}.")
+        await message.answer("Я сплю. Жди 6:00.")
         return
 
     day, deadline_dt = current_day_deadline()

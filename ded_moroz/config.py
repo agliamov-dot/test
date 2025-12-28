@@ -19,14 +19,14 @@ class CampaignConfig(BaseSettings):
         24, validation_alias=AliasChoices("CAMPAIGN_DAYS", "CAMPAIGN_TOTAL_DAYS")
     )
     reminder_deadline_hour: int = Field(
-        10, validation_alias=AliasChoices("CAMPAIGN_REMINDER_DEADLINE_HOUR", "CAMPAIGN_REMINDER_HOUR")
+        12, validation_alias=AliasChoices("CAMPAIGN_REMINDER_DEADLINE_HOUR", "CAMPAIGN_REMINDER_HOUR")
     )
     missed_deadline_hour: int = Field(
-        22, validation_alias=AliasChoices("CAMPAIGN_MISSED_DEADLINE_HOUR", "CAMPAIGN_MISSED_HOUR")
+        23, validation_alias=AliasChoices("CAMPAIGN_MISSED_DEADLINE_HOUR", "CAMPAIGN_MISSED_HOUR")
     )
     timezone: str = Field("Europe/Moscow", validation_alias=AliasChoices("CAMPAIGN_TZ", "CAMPAIGN_TIMEZONE"))
     quiet_hours_start: int = Field(23, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_START"))
-    quiet_hours_end: int = Field(8, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_END"))
+    quiet_hours_end: int = Field(6, validation_alias=AliasChoices("CAMPAIGN_QUIET_HOURS_END"))
     max_attempts_per_day: int = Field(
         3, validation_alias=AliasChoices("CAMPAIGN_MAX_ATTEMPTS_PER_DAY", "MAX_ATTEMPTS_PER_DAY")
     )
