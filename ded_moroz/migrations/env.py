@@ -3,7 +3,7 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from ded_moroz.config import settings
@@ -43,6 +43,10 @@ def run_migrations_online() -> None:
         context.configure(connection=connection, target_metadata=target_metadata)
 
     def _run_sync_migrations(connection) -> None:
+        if connection.dialect.name == "postgresql":
+            # На некоторых инсталляциях мог остаться конфликтный тип alembic_version;
+            # удаляем тип перед созданием таблицы версии (idempotent).
+            connection.execute(text("DROP TYPE IF EXISTS alembic_version CASCADE"))
         _configure(connection)
         with context.begin_transaction():
             context.run_migrations()
